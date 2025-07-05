@@ -5,12 +5,124 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI拼图</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="ipintu.css">
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            position: relative;
+        }
+        
+        .floating-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
+                        radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.3) 0%, transparent 50%);
+            animation: float 6s ease-in-out infinite;
+        }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-20px); }
+        }
+        
+        .card-glass {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-secondary {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            transition: all 0.3s ease;
+        }
+        
+        .btn-secondary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(240, 147, 251, 0.4);
+        }
+        
+        .image-item {
+            position: relative;
+            overflow: hidden;
+            border-radius: 12px;
+            transition: transform 0.3s ease;
+        }
+        
+        .image-item:hover {
+            transform: scale(1.05);
+        }
+        
+        .image-item img {
+            width: 100%;
+            height: 120px;
+            object-fit: cover;
+        }
+        
+        .remove-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 24px;
+            height: 24px;
+            background: rgba(239, 68, 68, 0.9);
+            border-radius: 50%;
+            color: white;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .remove-btn:hover {
+            background: rgba(239, 68, 68, 1);
+            transform: scale(1.1);
+        }
+        
+        .puzzle-piece {
+            position: absolute;
+            transition: all 0.3s ease;
+            cursor: move;
+        }
+        
+        .puzzle-piece:hover {
+            transform: scale(1.05);
+            z-index: 10;
+        }
+        
+        .loading-spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
 </head>
 <body class="gradient-bg min-h-screen">
     <div class="floating-bg"></div>
     
-    <div class="max-w-7xl mx-auto px-4 py-8">
+    <div class="max-w-7xl mx-auto px-4 py-8 relative z-10">
         <!-- 标题区域 -->
         <div class="text-center mb-12">
             <div class="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl mb-6">
@@ -120,6 +232,358 @@
         </div>
     </div>
 
-    <script src="ipintu.js"></script>
+    <script>
+        class PuzzleGenerator {
+            constructor() {
+                this.images = [];
+                this.currentLayout = 'grid';
+                this.layouts = ['grid', 'mosaic', 'spiral', 'random'];
+                this.maxImages = 10;
+                this.init();
+            }
+
+            init() {
+                this.setupEventListeners();
+                this.updateUI();
+            }
+
+            setupEventListeners() {
+                // 文件输入
+                const fileInput = document.getElementById('fileInput');
+                const dropZone = document.getElementById('dropZone');
+                const generateBtn = document.getElementById('generateBtn');
+                const switchLayoutBtn = document.getElementById('switchLayoutBtn');
+                const exportBtn = document.getElementById('exportBtn');
+
+                // 点击上传区域
+                dropZone.addEventListener('click', () => {
+                    fileInput.click();
+                });
+
+                // 文件选择
+                fileInput.addEventListener('change', (e) => {
+                    this.handleFiles(e.target.files);
+                });
+
+                // 拖拽上传
+                dropZone.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    dropZone.classList.add('border-blue-400', 'bg-blue-50/30');
+                });
+
+                dropZone.addEventListener('dragleave', (e) => {
+                    e.preventDefault();
+                    dropZone.classList.remove('border-blue-400', 'bg-blue-50/30');
+                });
+
+                dropZone.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    dropZone.classList.remove('border-blue-400', 'bg-blue-50/30');
+                    this.handleFiles(e.dataTransfer.files);
+                });
+
+                // 生成按钮
+                generateBtn.addEventListener('click', () => {
+                    this.generatePuzzle();
+                });
+
+                // 切换布局按钮
+                switchLayoutBtn.addEventListener('click', () => {
+                    this.switchLayout();
+                });
+
+                // 导出按钮
+                exportBtn.addEventListener('click', () => {
+                    this.exportPuzzle();
+                });
+            }
+
+            handleFiles(files) {
+                const fileArray = Array.from(files);
+                const imageFiles = fileArray.filter(file => file.type.startsWith('image/'));
+                
+                if (this.images.length + imageFiles.length > this.maxImages) {
+                    alert(`最多只能上传 ${this.maxImages} 张图片`);
+                    return;
+                }
+
+                imageFiles.forEach(file => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        this.addImage(e.target.result, file.name);
+                    };
+                    reader.readAsDataURL(file);
+                });
+            }
+
+            addImage(src, name) {
+                const id = Date.now() + Math.random();
+                this.images.push({ id, src, name });
+                this.updateImagePreview();
+                this.updateUI();
+            }
+
+            removeImage(id) {
+                this.images = this.images.filter(img => img.id !== id);
+                this.updateImagePreview();
+                this.updateUI();
+            }
+
+            updateImagePreview() {
+                const preview = document.getElementById('imagePreview');
+                const grid = document.getElementById('imageGrid');
+                const count = document.getElementById('imageCount');
+
+                if (this.images.length === 0) {
+                    preview.classList.add('hidden');
+                    return;
+                }
+
+                preview.classList.remove('hidden');
+                count.querySelector('span').textContent = `${this.images.length} 张图片`;
+
+                grid.innerHTML = '';
+                this.images.forEach(img => {
+                    const item = document.createElement('div');
+                    item.className = 'image-item';
+                    item.innerHTML = `
+                        <img src="${img.src}" alt="${img.name}" loading="lazy">
+                        <div class="remove-btn" onclick="puzzleGen.removeImage(${img.id})">×</div>
+                    `;
+                    grid.appendChild(item);
+                });
+            }
+
+            updateUI() {
+                const generateBtn = document.getElementById('generateBtn');
+                const exportBtn = document.getElementById('exportBtn');
+                
+                generateBtn.disabled = this.images.length === 0;
+                exportBtn.disabled = !document.getElementById('puzzleCanvas').getContext;
+            }
+
+            switchLayout() {
+                const currentIndex = this.layouts.indexOf(this.currentLayout);
+                this.currentLayout = this.layouts[(currentIndex + 1) % this.layouts.length];
+                
+                const layoutNames = {
+                    grid: '网格布局',
+                    mosaic: '马赛克布局',
+                    spiral: '螺旋布局',
+                    random: '随机布局'
+                };
+
+                document.getElementById('currentLayout').querySelector('span') || 
+                document.getElementById('currentLayout').appendChild(document.createElement('span'));
+                document.getElementById('currentLayout').lastChild.textContent = layoutNames[this.currentLayout];
+                
+                // 如果已经生成了拼图，重新生成
+                if (!document.getElementById('puzzlePreview').classList.contains('hidden')) {
+                    this.generatePuzzle();
+                }
+            }
+
+            async generatePuzzle() {
+                if (this.images.length === 0) return;
+
+                const generateBtn = document.getElementById('generateBtn');
+                const originalText = generateBtn.innerHTML;
+                
+                // 显示加载状态
+                generateBtn.innerHTML = `
+                    <div class="loading-spinner"></div>
+                    <span>生成中...</span>
+                `;
+                generateBtn.disabled = true;
+
+                try {
+                    await this.createPuzzleCanvas();
+                    document.getElementById('puzzlePreview').classList.remove('hidden');
+                    this.updateUI();
+                } catch (error) {
+                    console.error('生成拼图失败:', error);
+                    alert('生成拼图失败，请重试');
+                } finally {
+                    generateBtn.innerHTML = originalText;
+                    generateBtn.disabled = false;
+                }
+            }
+
+            async createPuzzleCanvas() {
+                const canvas = document.getElementById('puzzleCanvas');
+                const ctx = canvas.getContext('2d');
+                
+                // 设置画布大小
+                canvas.width = 800;
+                canvas.height = 600;
+
+                // 清空画布
+                ctx.fillStyle = '#f8f9fa';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                // 根据布局生成拼图
+                await this.renderLayout(ctx, canvas.width, canvas.height);
+            }
+
+            async renderLayout(ctx, width, height) {
+                const images = await this.loadImages();
+                
+                switch (this.currentLayout) {
+                    case 'grid':
+                        this.renderGridLayout(ctx, images, width, height);
+                        break;
+                    case 'mosaic':
+                        this.renderMosaicLayout(ctx, images, width, height);
+                        break;
+                    case 'spiral':
+                        this.renderSpiralLayout(ctx, images, width, height);
+                        break;
+                    case 'random':
+                        this.renderRandomLayout(ctx, images, width, height);
+                        break;
+                }
+            }
+
+            async loadImages() {
+                const loadPromises = this.images.map(imgData => {
+                    return new Promise((resolve) => {
+                        const img = new Image();
+                        img.onload = () => resolve(img);
+                        img.onerror = () => resolve(null);
+                        img.src = imgData.src;
+                    });
+                });
+                
+                const loadedImages = await Promise.all(loadPromises);
+                return loadedImages.filter(img => img !== null);
+            }
+
+            renderGridLayout(ctx, images, width, height) {
+                const cols = Math.ceil(Math.sqrt(images.length));
+                const rows = Math.ceil(images.length / cols);
+                const cellWidth = width / cols;
+                const cellHeight = height / rows;
+
+                images.forEach((img, index) => {
+                    const col = index % cols;
+                    const row = Math.floor(index / cols);
+                    const x = col * cellWidth;
+                    const y = row * cellHeight;
+
+                    this.drawImageFit(ctx, img, x, y, cellWidth, cellHeight);
+                    this.drawBorder(ctx, x, y, cellWidth, cellHeight);
+                });
+            }
+
+            renderMosaicLayout(ctx, images, width, height) {
+                const tileSize = 80;
+                const cols = Math.floor(width / tileSize);
+                const rows = Math.floor(height / tileSize);
+                
+                for (let row = 0; row < rows; row++) {
+                    for (let col = 0; col < cols; col++) {
+                        const imgIndex = Math.floor(Math.random() * images.length);
+                        const img = images[imgIndex];
+                        const x = col * tileSize;
+                        const y = row * tileSize;
+                        
+                        this.drawImageFit(ctx, img, x, y, tileSize, tileSize);
+                        this.drawBorder(ctx, x, y, tileSize, tileSize);
+                    }
+                }
+            }
+
+            renderSpiralLayout(ctx, images, width, height) {
+                const centerX = width / 2;
+                const centerY = height / 2;
+                const radius = Math.min(width, height) / 4;
+                
+                images.forEach((img, index) => {
+                    const angle = (index / images.length) * Math.PI * 4;
+                    const r = radius * (index / images.length);
+                    const x = centerX + Math.cos(angle) * r;
+                    const y = centerY + Math.sin(angle) * r;
+                    const size = 60 + (index % 3) * 20;
+                    
+                    this.drawImageFit(ctx, img, x - size/2, y - size/2, size, size);
+                    this.drawBorder(ctx, x - size/2, y - size/2, size, size);
+                });
+            }
+
+            renderRandomLayout(ctx, images, width, height) {
+                const usedPositions = [];
+                
+                images.forEach((img, index) => {
+                    let x, y, size;
+                    let attempts = 0;
+                    
+                    do {
+                        size = 60 + Math.random() * 80;
+                        x = Math.random() * (width - size);
+                        y = Math.random() * (height - size);
+                        attempts++;
+                    } while (this.isOverlapping(x, y, size, size, usedPositions) && attempts < 50);
+                    
+                    usedPositions.push({ x, y, width: size, height: size });
+                    this.drawImageFit(ctx, img, x, y, size, size);
+                    this.drawBorder(ctx, x, y, size, size);
+                });
+            }
+
+            isOverlapping(x, y, width, height, positions) {
+                return positions.some(pos => {
+                    return !(x > pos.x + pos.width || 
+                           x + width < pos.x || 
+                           y > pos.y + pos.height || 
+                           y + height < pos.y);
+                });
+            }
+
+            drawImageFit(ctx, img, x, y, width, height) {
+                const imgRatio = img.width / img.height;
+                const boxRatio = width / height;
+                
+                let drawWidth, drawHeight, drawX, drawY;
+                
+                if (imgRatio > boxRatio) {
+                    drawHeight = height;
+                    drawWidth = height * imgRatio;
+                    drawX = x - (drawWidth - width) / 2;
+                    drawY = y;
+                } else {
+                    drawWidth = width;
+                    drawHeight = width / imgRatio;
+                    drawX = x;
+                    drawY = y - (drawHeight - height) / 2;
+                }
+                
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(x, y, width, height);
+                ctx.clip();
+                ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+                ctx.restore();
+            }
+
+            drawBorder(ctx, x, y, width, height) {
+                ctx.strokeStyle = '#e5e7eb';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x, y, width, height);
+            }
+
+            exportPuzzle() {
+                const canvas = document.getElementById('puzzleCanvas');
+                if (!canvas.getContext) return;
+
+                const link = document.createElement('a');
+                link.download = `puzzle_${Date.now()}.png`;
+                link.href = canvas.toDataURL();
+                link.click();
+            }
+        }
+
+        // 初始化
+        const puzzleGen = new PuzzleGenerator();
+    </script>
 </body>
 </html>
